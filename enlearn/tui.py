@@ -3,6 +3,7 @@ from __future__ import annotations
 import curses
 import textwrap
 from dataclasses import dataclass
+from datetime import date, timedelta
 from sqlite3 import Connection
 
 from . import db
@@ -225,12 +226,11 @@ class TuiApp:
         # Activity calendar (last 4 weeks)
         lines.append("近4周打卡日历:")
         activity_map = {str(d["date"]): int(d["count"]) for d in daily_counts}
-        from datetime import timedelta as _td
         today = date.today()
         # Find the Monday of the current week
-        start_of_week = today - _td(days=today.weekday())
+        start_of_week = today - timedelta(days=today.weekday())
         # Go back 3 more weeks
-        cal_start = start_of_week - _td(weeks=3)
+        cal_start = start_of_week - timedelta(weeks=3)
         lines.append("  一 二 三 四 五 六 日")
         current = cal_start
         week_line = "  "
@@ -245,7 +245,7 @@ class TuiApp:
                 week_line += " · "
             else:
                 week_line += "   "
-            current += _td(days=1)
+            current += timedelta(days=1)
         lines.append(week_line.rstrip())
 
         lines.append("")
