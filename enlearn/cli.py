@@ -320,6 +320,8 @@ def learn_new_words(
     random_order: bool = False,
     mode: str = "en-cn",
 ) -> int:
+    import random as _random
+
     if limit <= 0:
         raise ValueError("--limit must be greater than 0")
 
@@ -331,13 +333,16 @@ def learn_new_words(
 
     learned = 0
     group_size = db.DEFAULT_REVIEW_GROUP_SIZE
-    for group_start in range(0, len(words), group_size):
+    total = len(words)
+    group_count = (total + group_size - 1) // group_size
+
+    for group_start in range(0, total, group_size):
         group = words[group_start : group_start + group_size]
-        weak_items = []
         group_no = group_start // group_size + 1
-        group_count = (len(words) + group_size - 1) // group_size
+
+        # Phase 1: Learn — show full details, self-assess
         print()
-        print(f"第 {group_no}/{group_count} 组")
+        print(f"=== 第 {group_no}/{group_count} 组：学习 ===")
         for item in group:
             print()
             print(f"单词: {item.word}")
@@ -366,10 +371,58 @@ def learn_new_words(
                 lapsed=result.lapsed,
                 is_new=True,
             )
+            learned += 1
+
+        # Phase 2: Review — test recall on the same words
+        print()
+        print(f"=== 第 {group_no}/{group_count} 组：复习 ===")
+        word_ids = {item.word_id for item in group}
+        review_items = [
+            item for item in db.due_words(conn, limit=999, category=category)
+            if item.word_id in word_ids
+        ]
+        weak_items = []
+        for item in review_items:
+            actual_mode = mode
+            if mode == "mixed":
+                actual_mode = _random.choice(["en-cn", "cn-en"])
+            print()
+            if actual_mode == "cn-en":
+                print(f"释义: {item.translation}")
+                if item.pos:
+                    print(f"词性: {item.pos}")
+                input("回忆英文单词后按回车查看答案...")
+                print(f"单词: {item.word}")
+                if item.phonetic:
+                    print(f"音标: {item.phonetic}")
+            else:
+                print(f"单词: {item.word}")
+                if item.phonetic:
+                    print(f"音标: {item.phonetic}")
+                input("回忆释义后按回车查看答案...")
+                print(f"释义: {item.translation}")
+                if item.definition:
+                    print(f"英文: {item.definition}")
+
+            quality = ask_quality()
+            result = schedule_review(
+                quality=quality,
+                ease_factor=item.ease_factor,
+                interval_days=item.interval_days,
+                repetitions=item.repetitions,
+            )
+            db.update_review(
+                conn,
+                word_id=item.word_id,
+                ease_factor=result.ease_factor,
+                interval_days=result.interval_days,
+                repetitions=result.repetitions,
+                due_date=result.due_date,
+                lapsed=result.lapsed,
+            )
             if quality < 3:
                 weak_items.append(item)
             print(f"下次复习: {result.due_date.isoformat()}，间隔 {result.interval_days} 天")
-            learned += 1
         if weak_items:
             print()
             print(f"第 {group_no} 组薄弱词强化")
@@ -377,7 +430,7 @@ def learn_new_words(
                 print(f"- {item.word}: {item.translation}")
 
     print()
-    print(f"本次学习完成: {learned} 个新词")
+    print(f"本次学习完成: {learned} 个新词（含复习）")
     return 0
 
 

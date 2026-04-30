@@ -518,6 +518,7 @@ class TuiApp:
         daily_limit = db.get_daily_word_limit(self.conn)
         learning_category = db.get_learning_category(self.conn)
         random_order = db.get_random_review_order(self.conn)
+        review_mode = db.get_review_mode(self.conn)
         new_words = db.new_words(
             self.conn,
             limit=daily_limit,
@@ -530,13 +531,16 @@ class TuiApp:
 
         learned = 0
         group_size = db.DEFAULT_REVIEW_GROUP_SIZE
-        for group_start in range(0, len(new_words), group_size):
+        total = len(new_words)
+        group_count = (total + group_size - 1) // group_size
+
+        for group_start in range(0, total, group_size):
             group = new_words[group_start : group_start + group_size]
-            weak_items = []
             group_no = group_start // group_size + 1
-            group_count = (len(new_words) + group_size - 1) // group_size
+
+            # Phase 1: Learn — show full details, self-assess
             for item in group:
-                quality = self.learn_one_word(item, learned, len(new_words), group_no, group_count)
+                quality = self.learn_one_word(item, learned, total, group_no, group_count)
                 if quality is None:
                     self.message = f"本次学习完成 {learned} 个新词"
                     return
@@ -556,13 +560,62 @@ class TuiApp:
                     lapsed=result.lapsed,
                     is_new=True,
                 )
+                learned += 1
+
+            # Phase 2: Review — re-fetch updated words, test recall
+            self.show_text([
+                f"第 {group_no}/{group_count} 组学完！",
+                "",
+                f"本组 {len(group)} 个新词已学完",
+                f"接下来用 {review_mode} 模式复习本组单词",
+                "",
+                "按 Enter 开始复习，q 跳过",
+            ], wait=False)
+            key = self.stdscr.getch()
+            if key in (ord("q"), ord("Q"), 27):
+                continue
+
+            # Re-fetch the same words with updated review state
+            word_ids = [item.word_id for item in group]
+            review_items = [
+                item for item in db.due_words(
+                    self.conn, limit=999, category=learning_category,
+                )
+                if item.word_id in set(word_ids)
+            ]
+            if not review_items:
+                continue
+
+            reviewed = 0
+            weak_items = []
+            for item in review_items:
+                quality = self.review_one_word(
+                    item, reviewed, len(review_items), group_no, group_count, mode=review_mode,
+                )
+                if quality is None:
+                    break
+                result = schedule_review(
+                    quality=quality,
+                    ease_factor=item.ease_factor,
+                    interval_days=item.interval_days,
+                    repetitions=item.repetitions,
+                )
+                db.update_review(
+                    self.conn,
+                    word_id=item.word_id,
+                    ease_factor=result.ease_factor,
+                    interval_days=result.interval_days,
+                    repetitions=result.repetitions,
+                    due_date=result.due_date,
+                    lapsed=result.lapsed,
+                )
                 if quality < 3:
                     weak_items.append(item)
-                learned += 1
+                reviewed += 1
             if weak_items:
                 self.reinforce_weak_words(weak_items, group_no)
 
-        self.message = f"本次学习完成 {learned} 个新词"
+        self.message = f"本次学习完成 {learned} 个新词（含复习）"
 
     def learn_one_word(self, item: db.DueWord, learned: int, total: int, group_no: int, group_count: int) -> int | None:
         """Show full word details for learning (not recall), then ask self-assessment."""
