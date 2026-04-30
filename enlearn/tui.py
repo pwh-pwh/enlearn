@@ -311,43 +311,100 @@ class TuiApp:
                 return
 
     def settings_screen(self) -> None:
-        current_limit = db.get_daily_word_limit(self.conn)
-        raw = self.prompt("每天学习的单词数量", default=str(current_limit))
-        try:
-            value = int(raw)
-            db.set_daily_word_limit(self.conn, value)
-        except ValueError:
-            self.message = "每天学习数量必须是正整数"
-            return
-
-        categories = ", ".join(source_categories())
-        current_category = db.get_learning_category(self.conn)
-        raw_category = self.prompt(f"学习词库: {categories}", default=current_category)
-        try:
-            category = normalize_category(raw_category)
-            db.set_learning_category(self.conn, category)
-        except ValueError as exc:
-            self.message = str(exc)
-            return
-
-        current_order = "y" if db.get_random_review_order(self.conn) else "n"
-        raw_order = self.prompt("是否乱序复习？输入 y/n", default=current_order).lower()
-        if raw_order not in {"y", "yes", "n", "no"}:
-            self.message = "乱序复习只能输入 y 或 n"
-            return
-        random_order = raw_order in {"y", "yes"}
-        db.set_random_review_order(self.conn, random_order)
-
-        current_mode = db.get_review_mode(self.conn)
-        raw_mode = self.prompt("复习模式: en-cn(英→中) cn-en(中→英) mixed(混合)", default=current_mode)
-        if raw_mode not in {"en-cn", "cn-en", "mixed"}:
-            self.message = "复习模式只能是 en-cn、cn-en 或 mixed"
-            return
-        db.set_review_mode(self.conn, raw_mode)
-
-        order_text = "乱序" if random_order else "到期顺序"
+        categories = source_categories()
         mode_names = {"en-cn": "英→中", "cn-en": "中→英", "mixed": "混合"}
-        self.message = f"设置已保存：每日 {value}，词库 {category}，{order_text}，{mode_names[raw_mode]}"
+        order_options = ["顺序", "乱序"]
+        mode_options = ["en-cn", "cn-en", "mixed"]
+
+        # Current values
+        daily_limit = db.get_daily_word_limit(self.conn)
+        category = db.get_learning_category(self.conn)
+        random_order = db.get_random_review_order(self.conn)
+        review_mode = db.get_review_mode(self.conn)
+
+        cat_idx = categories.index(category) if category in categories else 0
+        order_idx = 1 if random_order else 0
+        mode_idx = mode_options.index(review_mode) if review_mode in mode_options else 0
+        field = 0  # 0=daily_limit, 1=category, 2=order, 3=mode
+
+        while True:
+            self.stdscr.erase()
+            height, width = self.stdscr.getmaxyx()
+            self.draw_frame("学习设置")
+
+            y = 3
+            fields = [
+                ("每日学习数量", str(daily_limit)),
+                ("学习词库", categories[cat_idx]),
+                ("复习顺序", order_options[order_idx]),
+                ("复习模式", f"{mode_options[mode_idx]} ({mode_names[mode_options[mode_idx]]})"),
+            ]
+            for idx, (label, val) in enumerate(fields):
+                cursor = "» " if idx == field else "  "
+                attr = self.theme.selected if idx == field else self.theme.normal
+                self.add_line(y, 4, f"{cursor}{label}: {val}", attr)
+                y += 1
+
+            y += 1
+            self.add_line(y, 4, "↑/↓ 切换字段  ←/→ 修改选项  Enter 编辑数量", self.theme.dim)
+            self.add_line(y + 1, 4, "s 保存  q 取消", self.theme.dim)
+
+            # Hint for current field
+            y += 3
+            if field == 0:
+                self.add_line(y, 4, "提示: 按 Enter 输入数字，↑/↓ 增减", self.theme.dim)
+            elif field == 1:
+                self.add_line(y, 4, f"可选: {', '.join(categories)}", self.theme.dim)
+            elif field == 2:
+                self.add_line(y, 4, "←/→ 切换顺序/乱序", self.theme.dim)
+            elif field == 3:
+                self.add_line(y, 4, "←/→ 切换英→中 / 中→英 / 混合", self.theme.dim)
+
+            self.stdscr.refresh()
+            key = self.stdscr.getch()
+
+            if key in (ord("q"), ord("Q"), 27):
+                self.message = "设置已取消"
+                return
+            if key in (ord("s"), ord("S")):
+                # Save all settings
+                db.set_daily_word_limit(self.conn, daily_limit)
+                db.set_learning_category(self.conn, categories[cat_idx])
+                db.set_random_review_order(self.conn, order_idx == 1)
+                db.set_review_mode(self.conn, mode_options[mode_idx])
+                self.message = (
+                    f"设置已保存：每日 {daily_limit}，"
+                    f"词库 {categories[cat_idx]}，"
+                    f"{order_options[order_idx]}，"
+                    f"{mode_names[mode_options[mode_idx]]}"
+                )
+                return
+            if key in (curses.KEY_UP, ord("k")):
+                field = (field - 1) % 4
+            elif key in (curses.KEY_DOWN, ord("j")):
+                field = (field + 1) % 4
+            elif key in (curses.KEY_LEFT, curses.KEY_RIGHT, ord("h"), ord("l")):
+                if field == 1:
+                    if key in (curses.KEY_RIGHT, ord("l")):
+                        cat_idx = (cat_idx + 1) % len(categories)
+                    else:
+                        cat_idx = (cat_idx - 1) % len(categories)
+                elif field == 2:
+                    order_idx = 1 - order_idx
+                elif field == 3:
+                    if key in (curses.KEY_RIGHT, ord("l")):
+                        mode_idx = (mode_idx + 1) % len(mode_options)
+                    else:
+                        mode_idx = (mode_idx - 1) % len(mode_options)
+            elif key in (curses.KEY_ENTER, 10, 13):
+                if field == 0:
+                    raw = self.prompt("每天学习数量", default=str(daily_limit))
+                    try:
+                        val = int(raw)
+                        if val > 0:
+                            daily_limit = val
+                    except ValueError:
+                        pass
 
     def words_screen(self) -> None:
         category = self.prompt("输入类别过滤，留空显示全部")
