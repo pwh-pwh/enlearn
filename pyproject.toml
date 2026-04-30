@@ -1,0 +1,10 @@
+[project]
+name = "enlearn"
+version = "0.1.0"
+description = "English vocabulary learning and review CLI"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = []
+
+[project.scripts]
+enlearn = "enlearn.cli:run"
