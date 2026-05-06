@@ -289,15 +289,33 @@ class TuiApp:
         random_order = db.get_random_review_order(self.conn)
         new_count = db.count_new_words(self.conn, learning_category)
         review_count = max(0, int(stat['due_words']) - new_count)
+        today_activity = db.get_today_activity(self.conn)
+        today_done = today_activity["words_reviewed"]
+        today_new = today_activity["new_words_learned"]
+        streak = db.get_streak(self.conn)
         self.stdscr.erase()
         self.draw_frame("今日任务")
         self.add_line(3, 4, f"词库: {learning_category}", self.theme.title)
         self.draw_labeled_progress(5, 4, "掌握进度", int(stat["mastered_words"]), int(stat["total_words"]))
-        self.add_line(7, 4, f"待学习新词: {new_count} 个", self.theme.accent)
-        self.add_line(8, 4, f"待复习旧词: {review_count} 个", self.theme.accent)
-        self.add_line(9, 4, f"错词/薄弱: {stat['weak_words']}")
-        self.add_line(10, 4, f"每日目标: {daily_limit} | 顺序: {'乱序' if random_order else '到期'}")
-        self.add_line(12, 4, "按 Enter 学习新词，r 复习旧词，q 返回", self.theme.dim)
+
+        # Today's progress
+        progress_pct = min(100, round(today_done * 100 / daily_limit)) if daily_limit else 0
+        self.add_line(7, 4, f"今日已完成: {today_done}/{daily_limit} ({progress_pct}%)", self.theme.accent)
+        if today_new > 0:
+            self.add_line(8, 4, f"  其中新词: {today_new} 个", self.theme.dim)
+        self.add_line(9, 4, f"连续学习: {streak} 天", self.theme.dim)
+
+        # Remaining
+        self.add_line(11, 4, f"待学习新词: {new_count} 个", self.theme.accent)
+        self.add_line(12, 4, f"待复习旧词: {review_count} 个", self.theme.accent)
+        self.add_line(13, 4, f"错词/薄弱: {stat['weak_words']}")
+        self.add_line(14, 4, f"每日目标: {daily_limit} | 顺序: {'乱序' if random_order else '到期'}")
+
+        if today_done >= daily_limit and new_count == 0 and review_count == 0:
+            self.add_line(16, 4, "今日任务已完成！按 q 返回", self.theme.success)
+        else:
+            self.add_line(16, 4, "按 Enter 学习新词，r 复习旧词，q 返回", self.theme.dim)
+
         self.stdscr.refresh()
         while True:
             key = self.stdscr.getch()

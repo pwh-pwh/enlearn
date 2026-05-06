@@ -513,6 +513,17 @@ def count_starred(conn: sqlite3.Connection) -> int:
     return int(row["c"])
 
 
+def get_today_activity(conn: sqlite3.Connection) -> dict[str, int]:
+    """Get today's review activity counts."""
+    row = conn.execute(
+        """SELECT words_reviewed, new_words_learned
+           FROM daily_activity WHERE date = date('now', 'localtime')"""
+    ).fetchone()
+    if row is None:
+        return {"words_reviewed": 0, "new_words_learned": 0}
+    return {"words_reviewed": row["words_reviewed"], "new_words_learned": row["new_words_learned"]}
+
+
 # --- Phase 1: Daily Activity / Streaks ---
 
 
