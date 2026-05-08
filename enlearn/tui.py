@@ -750,6 +750,7 @@ class TuiApp:
             limit=daily_limit,
             category=learning_category,
             random_order=random_order,
+            skip_new=True,
         )
         if not due:
             self.message = f"今天没有到期的 {learning_category} 单词"
