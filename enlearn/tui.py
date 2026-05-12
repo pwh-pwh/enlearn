@@ -652,12 +652,7 @@ class TuiApp:
 
             # Re-fetch the same words with updated review state
             word_ids = [item.word_id for item in group]
-            review_items = [
-                item for item in db.due_words(
-                    self.conn, limit=999, category=learning_category,
-                )
-                if item.word_id in set(word_ids)
-            ]
+            review_items = db.words_by_ids(self.conn, word_ids)
             if not review_items:
                 continue
 

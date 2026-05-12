@@ -291,6 +291,52 @@ def due_words(
     ]
 
 
+def words_by_ids(
+    conn: sqlite3.Connection,
+    word_ids: list[int],
+) -> list[DueWord]:
+    """Return words with their current review state, filtered by word IDs."""
+    if not word_ids:
+        return []
+    placeholders = ",".join("?" for _ in word_ids)
+    rows = conn.execute(
+        f"""
+        SELECT
+            w.id AS word_id,
+            w.word,
+            w.phonetic,
+            w.translation,
+            w.definition,
+            w.pos,
+            w.tags,
+            r.ease_factor,
+            r.interval_days,
+            r.repetitions,
+            r.due_date
+        FROM words w
+        JOIN reviews r ON r.word_id = w.id
+        WHERE w.id IN ({placeholders})
+        """,
+        word_ids,
+    ).fetchall()
+    return [
+        DueWord(
+            word_id=int(row["word_id"]),
+            word=row["word"],
+            phonetic=row["phonetic"],
+            translation=row["translation"],
+            definition=row["definition"],
+            pos=row["pos"],
+            tags=row["tags"],
+            ease_factor=float(row["ease_factor"]),
+            interval_days=int(row["interval_days"]),
+            repetitions=int(row["repetitions"]),
+            due_date=date.fromisoformat(row["due_date"]),
+        )
+        for row in rows
+    ]
+
+
 def update_review(
     conn: sqlite3.Connection,
     *,
